@@ -1,0 +1,6 @@
+.env
+__pycache__/
+*.pyc
+onco_chatbot.db
+temp_audio.webm
+pdfs/

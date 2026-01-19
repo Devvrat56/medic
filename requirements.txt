@@ -1,0 +1,12 @@
+flask==3.0.3
+flask-restx==1.3.0
+python-dotenv==1.0.1
+groq==1.0.0
+openai==1.51.0          # still using for whisper (Groq compatible)
+pytesseract==0.3.13
+pdf2image==1.17.0
+pillow==10.4.0
+pymupdf==1.24.10        # better alternative to many pdf parsers (fitz)
+python-multipart==0.0.9 # for file upload in fastapi style
+flask-cors==4.0.1
+uuid
