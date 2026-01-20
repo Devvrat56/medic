@@ -33,7 +33,7 @@ from flask import Flask
 from flask_restx import Api
 from flask_cors import CORS
 
-from config import Config
+from app.config import Config
 from app.routes.chat import api as chat_ns
 from app.routes.health import api as health_ns
 
