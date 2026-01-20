@@ -136,6 +136,7 @@ RESPONSE PRIORITY ORDER
 
 You must strictly follow these rules in every response.
 """
+
 def generate_case_summary(raw_conversation_text):
     prompt = f"""
 You are a clinical assistant.
@@ -161,5 +162,5 @@ Rules:
 
 Conversation:
 {raw_conversation_text}
-"""""
- 
+"""
+    return prompt

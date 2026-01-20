@@ -1,82 +1,53 @@
-from flask import request, current_app
-from flask_restx import Namespace, Resource, fields
-import uuid
+import os
+from flask import current_app
+from groq import Groq
 
-from app.services.groq_service import ask_groq, transcribe_audio
-from context import init_conversation as PATIENT_CONTEXT
-from context_2 import init_conversation as DOCTOR_CONTEXT
+def get_client():
+    api_key = current_app.config.get("GROQ_API_KEY")
+    if not api_key:
+        api_key = os.environ.get("GROQ_API_KEY")
+    
+    if not api_key:
+        raise ValueError("GROQ_API_KEY not found in configuration or environment variables")
+        
+    return Groq(api_key=api_key)
 
-api = Namespace("chat", description="Oncology Assistant Chat")
-
-sessions = {}
-
-init_payload = api.model("Init", {
-    "user_type": fields.String(required=True, enum=["patient", "doctor"]),
-    "cancer_type": fields.String,
-    "cancer_stage": fields.String,
-    "language": fields.String,
-    "doctor_id": fields.String
-})
-
-message_payload = api.model("Message", {
-    "session_id": fields.String(required=True),
-    "message": fields.String(required=True),
-    "is_voice": fields.Boolean
-})
-
-
-@api.route("/init")
-class Init(Resource):
-    @api.expect(init_payload)
-    def post(self):
-        data = api.payload
-
-        if data["user_type"] == "doctor":
-            if data.get("doctor_id") != current_app.config["DOCTOR_ID"]:
-                return {"error": "Unauthorized doctor"}, 403
-
-        session_id = str(uuid.uuid4())
-
-        base_prompt = (
-            DOCTOR_CONTEXT()
-            if data["user_type"] == "doctor"
-            else PATIENT_CONTEXT()
+def ask_groq(messages, model="llama-3.3-70b-versatile"):
+    """
+    Send messages to Groq API and return the response content.
+    messages: list of dicts [{"role": "user", "content": "..."}]
+    """
+    client = get_client()
+    
+    try:
+        completion = client.chat.completions.create(
+            messages=messages,
+            model=model,
+            temperature=0.6,
+            max_tokens=1024,
+            top_p=1,
+            stop=None,
+            stream=False
         )
+        return completion.choices[0].message.content
+    except Exception as e:
+        print(f"Error calling Groq API: {e}")
+        raise e
 
-        system_prompt = f"""
-{base_prompt}
-
-Cancer type: {data.get("cancer_type", "Unknown")}
-Stage: {data.get("cancer_stage", "Unknown")}
-Language: {data.get("language", "en")}
-"""
-
-        sessions[session_id] = {
-            "history": [{"role": "system", "content": system_prompt}],
-            "ui": []
-        }
-
-        return {"session_id": session_id}, 201
-
-
-@api.route("/message")
-class Message(Resource):
-    @api.expect(message_payload)
-    def post(self):
-        data = request.json
-        session_id = data["session_id"]
-
-        if session_id not in sessions:
-            return {"error": "Invalid session"}, 400
-
-        message = data["message"]
-        session = sessions[session_id]
-
-        session["history"].append({"role": "user", "content": message})
-        reply = ask_groq(session["history"])
-        session["history"].append({"role": "assistant", "content": reply})
-
-        session["ui"].append(("You", message))
-        session["ui"].append(("Assistant", reply))
-
-        return {"reply": reply}
+def transcribe_audio(audio_file):
+    """
+    Transcribe audio using Groq Whisper.
+    audio_file: path to file or file-like object (opened in binary mode) with a name attribute or tuple.
+    """
+    client = get_client()
+    
+    try:
+        transcription = client.audio.transcriptions.create(
+            file=audio_file,
+            model="whisper-large-v3",
+            response_format="json"
+        )
+        return transcription.text
+    except Exception as e:
+        print(f"Error transcribing audio: {e}")
+        raise e

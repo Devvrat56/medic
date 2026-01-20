@@ -1,8 +1,10 @@
 from flask import request, current_app
 from flask_restx import Namespace, Resource, fields
+from werkzeug.datastructures import FileStorage
 import uuid
 
 from app.services.groq_service import ask_groq
+from app.services.pdf_service import save_and_extract_pdf
 from context import init_conversation as PATIENT_CONTEXT
 from context_2 import init_conversation as DOCTOR_CONTEXT
 
@@ -28,6 +30,12 @@ message_payload = api.model("MessagePayload", {
     "message": fields.String(required=True),
     "is_voice": fields.Boolean,
 })
+
+# Parser for file uploads (multipart/form-data)
+upload_parser = api.parser()
+upload_parser.add_argument('file', location='files', type=FileStorage, required=True, help='PDF Reference File')
+upload_parser.add_argument('session_id', location='form', required=True, help='Session ID')
+
 
 # -----------------------------
 # INIT CHAT
@@ -102,7 +110,7 @@ class SendMessage(Resource):
 
         session = sessions[session_id]
 
-        # Safety guardrails
+        # Safety guardrails (basic)
         dangerous = ["dose", "dosage", "prescribe", "treatment plan"]
         if any(w in user_message.lower() for w in dangerous):
             safe_reply = (
@@ -127,3 +135,50 @@ class SendMessage(Resource):
         )
 
         return {"reply": reply}, 200
+
+
+# -----------------------------
+# UPLOAD PDF
+# -----------------------------
+
+@api.route("/upload_pdf")
+class UploadPDF(Resource):
+    @api.expect(upload_parser)
+    def post(self):
+        args = upload_parser.parse_args()
+        
+        session_id = args.get('session_id')
+        uploaded_file = args.get('file')
+
+        if not session_id or session_id not in sessions:
+            return {"error": "Invalid or missing session_id"}, 400
+        
+        if not uploaded_file:
+            return {"error": "No file provided"}, 400
+            
+        if not uploaded_file.filename.lower().endswith('.pdf'):
+            return {"error": "Only PDF files are allowed"}, 400
+
+        try:
+            # Extract text from the PDF
+            pdf_text = save_and_extract_pdf(uploaded_file)
+            
+            if not pdf_text:
+                return {"error": "Could not extract text from the PDF. It might be empty or scanned images."}, 400
+                
+            # Add context to the session
+            system_note = f"\n[SYSTEM UPDATE]: The user uploaded a PDF reference named '{uploaded_file.filename}'. Content:\n{pdf_text}\n"
+            
+            sessions[session_id]["history"].append({
+                "role": "system", 
+                "content": system_note
+            })
+            
+            return {
+                "message": "PDF uploaded and processed. The assistant now has this context.",
+                "filename": uploaded_file.filename,
+                "extracted_length": len(pdf_text)
+            }, 200
+
+        except Exception as e:
+            return {"error": f"Failed to process PDF: {str(e)}"}, 500
