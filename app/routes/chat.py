@@ -3,8 +3,8 @@ from flask_restx import Namespace, Resource, fields
 import uuid
 
 from app.services.groq_service import ask_groq
-from app.context import init_conversation as PATIENT_CONTEXT
-from app.context_2 import init_conversation as DOCTOR_CONTEXT
+from context import init_conversation as PATIENT_CONTEXT
+from context_2 import init_conversation as DOCTOR_CONTEXT
 
 api = Namespace("chat", description="Oncology Assistant Chat")
 
