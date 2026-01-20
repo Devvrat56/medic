@@ -4,7 +4,7 @@ from werkzeug.datastructures import FileStorage
 import uuid
 
 from app.services.groq_service import ask_groq
-from app.services.pdf_service import save_and_extract_pdf
+from app.services.file_service import save_and_process_file
 from context import init_conversation as PATIENT_CONTEXT
 from context_2 import init_conversation as DOCTOR_CONTEXT
 
@@ -33,7 +33,7 @@ message_payload = api.model("MessagePayload", {
 
 # Parser for file uploads (multipart/form-data)
 upload_parser = api.parser()
-upload_parser.add_argument('file', location='files', type=FileStorage, required=True, help='PDF Reference File')
+upload_parser.add_argument('file', location='files', type=FileStorage, required=True, help='File to upload (PDF, Image, Text)')
 upload_parser.add_argument('session_id', location='form', required=True, help='Session ID')
 
 
@@ -138,11 +138,11 @@ class SendMessage(Resource):
 
 
 # -----------------------------
-# UPLOAD PDF
+# UPLOAD FILE
 # -----------------------------
 
-@api.route("/upload_pdf")
-class UploadPDF(Resource):
+@api.route("/upload")
+class UploadFile(Resource):
     @api.expect(upload_parser)
     def post(self):
         args = upload_parser.parse_args()
@@ -155,19 +155,16 @@ class UploadPDF(Resource):
         
         if not uploaded_file:
             return {"error": "No file provided"}, 400
-            
-        if not uploaded_file.filename.lower().endswith('.pdf'):
-            return {"error": "Only PDF files are allowed"}, 400
 
         try:
-            # Extract text from the PDF
-            pdf_text = save_and_extract_pdf(uploaded_file)
+            # Extract text from the file (PDF, Image, etc.)
+            extracted_text = save_and_process_file(uploaded_file)
             
-            if not pdf_text:
-                return {"error": "Could not extract text from the PDF. It might be empty or scanned images."}, 400
+            if not extracted_text:
+                return {"error": "Could not extract text from the file. It might be empty or unreadable."}, 400
                 
             # Add context to the session
-            system_note = f"\n[SYSTEM UPDATE]: The user uploaded a PDF reference named '{uploaded_file.filename}'. Content:\n{pdf_text}\n"
+            system_note = f"\n[SYSTEM UPDATE]: The user uploaded a file named '{uploaded_file.filename}'. Content:\n{extracted_text}\n"
             
             sessions[session_id]["history"].append({
                 "role": "system", 
@@ -175,10 +172,12 @@ class UploadPDF(Resource):
             })
             
             return {
-                "message": "PDF uploaded and processed. The assistant now has this context.",
+                "message": "File uploaded and processed. The assistant now has this context.",
                 "filename": uploaded_file.filename,
-                "extracted_length": len(pdf_text)
+                "extracted_length": len(extracted_text)
             }, 200
-
+            
+        except ValueError as ve:
+             return {"error": str(ve)}, 400
         except Exception as e:
-            return {"error": f"Failed to process PDF: {str(e)}"}, 500
+            return {"error": f"Failed to process file: {str(e)}"}, 500
