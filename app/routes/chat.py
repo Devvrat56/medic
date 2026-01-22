@@ -6,7 +6,7 @@ import uuid
 from app.services.groq_service import ask_groq
 from app.services.file_service import save_and_process_file
 from context import init_conversation as PATIENT_CONTEXT
-from context_2 import init_conversation as DOCTOR_CONTEXT
+from context_2 import init_conversation as DOCTOR_CONTEXT, generate_case_summary
 
 api = Namespace("chat", description="Oncology Assistant Chat")
 
@@ -29,6 +29,10 @@ message_payload = api.model("MessagePayload", {
     "session_id": fields.String(required=True),
     "message": fields.String(required=True),
     "is_voice": fields.Boolean,
+})
+
+summary_payload = api.model("SummaryPayload", {
+    "session_id": fields.String(required=True, description="Session ID of the patient to summarize"),
 })
 
 # Parser for file uploads (multipart/form-data)
@@ -138,6 +142,47 @@ class SendMessage(Resource):
         )
 
         return {"reply": reply}, 200
+
+
+# -----------------------------
+# GENERATE SUMMARY
+# -----------------------------
+
+@api.route("/summary")
+class ChatSummary(Resource):
+    @api.expect(summary_payload)
+    def post(self):
+        data = request.json or {}
+        session_id = data.get("session_id")
+
+        if not session_id or session_id not in sessions:
+            return {"error": "Session not found"}, 404
+
+        # Retrieve history
+        history = sessions[session_id]["history"]
+        
+        # Format for LLM
+        conversation_text = ""
+        for msg in history:
+            role = msg.get("role")
+            content = msg.get("content")
+            if role == "user":
+                conversation_text += f"Patient: {content}\n"
+            elif role == "assistant":
+                conversation_text += f"AI: {content}\n"
+        
+        if not conversation_text.strip():
+            return {"error": "No conversation found to summarize"}, 400
+            
+        # Generate the clinical summary using the doctor-side prompt tool
+        prompt = generate_case_summary(conversation_text)
+        
+        try:
+            # We send this as a new independent request to the LLM
+            summary = ask_groq([{"role": "user", "content": prompt}])
+            return {"summary": summary}, 200
+        except Exception as e:
+            return {"error": f"LLM error: {str(e)}"}, 500
 
 
 # -----------------------------
