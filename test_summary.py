@@ -2,7 +2,7 @@ import requests
 import json
 import time
 
-BASE_URL = "http://127.0.0.1:8000"
+BASE_URL = "http://127.0.0.1:8080"
 
 def test_summary_flow():
     print("1. Initializing Patient Session...")
@@ -37,7 +37,7 @@ def test_summary_flow():
         else:
             print(f"   FAILED: Message failed {resp.text}")
 
-    print("\n3. Generating Summary (Doctor View)...")
+    print("\n3. Generating Summary (Doctor View) - Session Based...")
     summary_payload = {"session_id": session_id}
     resp = requests.post(f"{BASE_URL}/chat/summary", json=summary_payload)
     
@@ -45,10 +45,30 @@ def test_summary_flow():
         summary = resp.json().get("summary")
         print("\nSUCCESS! Summary Generated:")
         print("="*40)
-        print(summary)
+        print(summary[:200] + "...")
         print("="*40)
     else:
         print(f"FAILED: Summary generation failed {resp.text}")
+
+    print("\n4. Generating Summary (Stateless Mode) - History Based...")
+    # Test the new functionality where we send history directly
+    history_payload = {
+        "history": [
+            {"role": "user", "content": "I have severe headaches."},
+            {"role": "assistant", "content": "How long have you had them?"},
+            {"role": "user", "content": "For about 3 weeks. They are very painful."}
+        ]
+    }
+    resp = requests.post(f"{BASE_URL}/chat/summary", json=history_payload)
+
+    if resp.status_code == 200:
+        summary = resp.json().get("summary")
+        print("\nSUCCESS! Stateless Summary Generated:")
+        print("="*40)
+        print(summary[:200] + "...")
+        print("="*40)
+    else:
+        print(f"FAILED: Stateless summary failed {resp.text}")
 
 if __name__ == "__main__":
     # Give the server a moment to start

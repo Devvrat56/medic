@@ -32,7 +32,8 @@ message_payload = api.model("MessagePayload", {
 })
 
 summary_payload = api.model("SummaryPayload", {
-    "session_id": fields.String(required=True, description="Session ID of the patient to summarize"),
+    "session_id": fields.String(description="Session ID of the patient to summarize (optional if history provided)"),
+    "history": fields.List(fields.Raw, description="List of message objects to summarize (optional, overrides session_id)"),
 })
 
 # Parser for file uploads (multipart/form-data)
@@ -154,22 +155,33 @@ class ChatSummary(Resource):
     def post(self):
         data = request.json or {}
         session_id = data.get("session_id")
+        history_list = data.get("history")
 
-        if not session_id or session_id not in sessions:
-            return {"error": "Session not found"}, 404
-
-        # Retrieve history
-        history = sessions[session_id]["history"]
-        
-        # Format for LLM
         conversation_text = ""
-        for msg in history:
-            role = msg.get("role")
-            content = msg.get("content")
-            if role == "user":
-                conversation_text += f"Patient: {content}\n"
-            elif role == "assistant":
-                conversation_text += f"AI: {content}\n"
+        
+        # 1. Prioritize provided history (Client-side source of truth)
+        if history_list and isinstance(history_list, list):
+            for msg in history_list:
+                role = msg.get("role")
+                content = msg.get("content")
+                if role == "user":
+                    conversation_text += f"Patient: {content}\n"
+                elif role == "assistant":
+                    conversation_text += f"AI: {content}\n"
+                    
+        # 2. Fallback to server-side session
+        elif session_id and session_id in sessions:
+            history = sessions[session_id]["history"]
+            for msg in history:
+                role = msg.get("role")
+                content = msg.get("content")
+                if role == "user":
+                    conversation_text += f"Patient: {content}\n"
+                elif role == "assistant":
+                    conversation_text += f"AI: {content}\n"
+        
+        else:
+            return {"error": "Session not found or no history provided"}, 404
         
         if not conversation_text.strip():
             return {"error": "No conversation found to summarize"}, 400
