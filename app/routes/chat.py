@@ -77,6 +77,7 @@ Language: {language}
 """
 
         sessions[session_id] = {
+            "user_type": user_type,
             "history": [
                 {"role": "system", "content": system_prompt}
             ]
@@ -111,8 +112,10 @@ class SendMessage(Resource):
         session = sessions[session_id]
 
         # Safety guardrails (basic)
+        user_type = session.get("user_type", "patient")
         dangerous = ["dose", "dosage", "prescribe", "treatment plan"]
-        if any(w in user_message.lower() for w in dangerous):
+        
+        if user_type == "patient" and any(w in user_message.lower() for w in dangerous):
             safe_reply = (
                 "I can’t help with specific medical decisions or dosages, "
                 "but I can explain how doctors usually think about treatment options "
